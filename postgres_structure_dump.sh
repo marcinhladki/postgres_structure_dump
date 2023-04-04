@@ -74,7 +74,7 @@ echo -e '</databaseChangeLog>\n' >footer;
 for d in "$pwdlocdir"/*/*/ ; 
 do 
 	cat header >$d/db.changelog.xml
-	ls -1 $d | sed -n '/\.sql$/s/\(\S*\)\.sql/    <changeSet author="marcin" id="\1" runOnChange="true" runInTransaction="true">\n    <sqlFile dbms="postgresql" encoding="UTF-8" relativeToChangelogFile="true" splitStatements="true" endDelimiter=";;;"\n        path="\1.sql"\/>\n    <\/changeSet>\n/p' \
+	ls -1 $d | sed -n '/\.sql$/s/\(\S*\)\.sql/    <changeSet author="$author" id="\1" runOnChange="true" runInTransaction="true">\n    <sqlFile dbms="postgresql" encoding="UTF-8" relativeToChangelogFile="true" splitStatements="true" endDelimiter=";;;"\n        path="\1.sql"\/>\n    <\/changeSet>\n/p' \
 	>>$d/db.changelog.xml;
 	cat footer >>$d/db.changelog.xml;
 done;
@@ -83,30 +83,39 @@ done;
 for d in "$pwdlocdir"/*/ ;
 do
 	cat header >$d/db.changelog.xml;
-	[ -d $d/DATABASE ] && echo -e '    <include file="DATABASE/db.changelog.xml" relativeToChangelogFile="true"/>\n'>>$d/db.changelog.xml;
 	[ -d $d/SCHEMA ] && echo -e '    <include file="SCHEMA/db.changelog.xml" relativeToChangelogFile="true"/>\n'>>$d/db.changelog.xml;
 	[ -d $d/ACL ] && echo -e '    <include file="ACL/db.changelog.xml" relativeToChangelogFile="true"/>\n'>>$d/db.changelog.xml;
 	[ -d $d/EXTENSION ] && echo -e '    <include file="EXTENSION/db.changelog.xml" relativeToChangelogFile="true"/>\n'>>$d/db.changelog.xml;
-	[ -d $d/TABLE ] && echo -e '    <include file="TABLE/db.changelog.xml" relativeToChangelogFile="true"/>\n'>>$d/db.changelog.xml;
+	[ -d $d/FUNCTION ] && echo -e '    <include file="FUNCTION/db.changelog.xml" relativeToChangelogFile="true"/>\n'>>$d/db.changelog.xml;
 	[ -d $d/SEQUENCE ] && echo -e '    <include file="SEQUENCE/db.changelog.xml" relativeToChangelogFile="true"/>\n'>>$d/db.changelog.xml;
+	[ -d $d/TABLE ] && echo -e '    <include file="TABLE/db.changelog.xml" relativeToChangelogFile="true"/>\n'>>$d/db.changelog.xml;
 	[ -d $d/SEQUENCE_OWNED_BY ] && echo -e '    <include file="SEQUENCE_OWNED_BY/db.changelog.xml" relativeToChangelogFile="true"/>\n'>>$d/db.changelog.xml;
 	[ -d $d/DEFAULT ] && echo -e '    <include file="DEFAULT/db.changelog.xml" relativeToChangelogFile="true"/>\n'>>$d/db.changelog.xml;
 	[ -d $d/CONSTRAINT ] && echo -e '    <include file="CONSTRAINT/db.changelog.xml" relativeToChangelogFile="true"/>\n'>>$d/db.changelog.xml;
 	[ -d $d/INDEX ] && echo -e '    <include file="INDEX/db.changelog.xml" relativeToChangelogFile="true"/>\n'>>$d/db.changelog.xml;
 	[ -d $d/VIEW ] && echo -e '    <include file="VIEW/db.changelog.xml" relativeToChangelogFile="true"/>\n'>>$d/db.changelog.xml;
 	[ -d $d/PROCEDURE ] && echo -e '    <include file="PROCEDURE/db.changelog.xml" relativeToChangelogFile="true"/>\n'>>$d/db.changelog.xml;
-	[ -d $d/FUNCTION ] && echo -e '    <include file="FUNCTION/db.changelog.xml" relativeToChangelogFile="true"/>\n'>>$d/db.changelog.xml;
 	[ -d $d/COMMENT ] && echo -e '    <include file="COMMENT/db.changelog.xml" relativeToChangelogFile="true"/>\n'>>$d/db.changelog.xml;
 	cat footer >>$d/db.changelog.xml;
 done;
 
 # main db.changelog
+mv "$pwlocdir/-" "$pwlocdir/__general";
 cat header >"$pwdlocdir"/db.changelog.xml;
 ls -1d "$pwdlocdir"/*/ | sed 's/.*'"$locdir"'\/\(.*\)/    <include file="\1\/db.changelog.xml"\/>/' \
 	>>"$pwdlocdir"/db.changelog.xml
 cat footer >>"$pwdlocdir"/db.changelog.xml;
 
-#cleaning and show result
+#cleaning 
 popd >/dev/null;
 rm -rf "$pwdlocdir"".tmp";
+
+# and show result
 tree -d "$locdir";
+
+printf "
+Done.
+Things worth to check:
+
+\t - database creation - script exists in $locdir/__general/DATABASE, but is not connected to db.changlog system
+\t - databasechangelog* presence - if source database were maintained by liquibase"
