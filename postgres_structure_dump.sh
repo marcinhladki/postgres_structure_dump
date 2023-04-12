@@ -34,8 +34,11 @@ done
 [[ -n $locdir ]] || { locdir="$database""_structure_dump"; }
 [[ -n $author ]] || { author="$(whoami)" ; }
 
-printf "dump Postgres database structure using:\n\tssh: $sshconn\tdatabase: $database\tlocal directory: $locdir\tauthor: $author\n"
-
+if [[ "$sshconn" == "localhost" ]] ; then
+  printf "dump Postgres database structure using:\n\tlocal database: $database\tlocal directory: $locdir\tauthor: $author\n"
+else
+  printf "dump Postgres database structure using:\n\tssh: $sshconn\tdatabase: $database\tlocal directory: $locdir\tauthor: $author\n"
+fi
 pwdlocdir="$(pwd)/$locdir"
 
 # prepare folders
@@ -46,19 +49,23 @@ mkdir "$pwdlocdir"".tmp";
 pushd "$pwdlocdir"".tmp" >/dev/null;
 
 # get structure from database
-ssh -C "$sshconn" \
-	sudo -u postgres pg_dump -d "$database" -C -c --if-exists --schema-only --no-owner | \
-	sed  -e '/^--$/d' -e 's/^--/##/' > structure_dump.sql;
-
+if [[ "$sshconn" == "localhost" ]] ; then
+  sudo -u postgres pg_dump -d "$database" -c --if-exists --schema-only --no-owner | \
+    sed  -e '/^--$/d' -e 's/^--/##/' > structure_dump.sql;
+else
+  ssh -C "$sshconn" \
+    sudo -u postgres pg_dump -d "$database" -C -c --if-exists --schema-only --no-owner | \
+    sed  -e '/^--$/d' -e 's/^--/##/' > structure_dump.sql;
+fi
 # cut big result file to many small files each for one database object
 csplit -z -s -f std structure_dump.sql /##/ '{*}';
 
 # build directory tree for schemas and object types
 for f in std*; 
 do 
-	n=$(sed -n '/##/s/##\s*Name: \([^\;]*\);.*/\1/p' $f | sed 's/\W/_/g'); 
-	t=$(sed -n '/##/s/##\s*Name:[^\;]*; Type: \([^\;]*\);.*/\1/p' $f | sed 's/\W/_/g'); 
-	s=$(sed -n '/##/s/##\s*Name:[^\;]*; Type:[^\;]*; Schema: \(\S*\);.*/\1/p' $f); 
+	n=$(sed -n '/##/s/##\s*Name: \([^\;]*\);.*/\1/p' $f | sed 's/\W/_/g');
+	t=$(sed -n '/##/s/##\s*Name:[^\;]*; Type: \([^\;]*\);.*/\1/p' $f | sed 's/\W/_/g');
+	s=$(sed -n '/##/s/##\s*Name:[^\;]*; Type:[^\;]*; Schema: \(\S*\);.*/\1/p' $f);
 	#echo ____ $f : $s/$t/$n; 
 	mkdir "$pwdlocdir"/$s 2>/dev/null; 
 	mkdir "$pwdlocdir"/$s/$t 2>/dev/null; 
@@ -100,7 +107,7 @@ do
 done;
 
 # main db.changelog
-mv "$pwlocdir/-" "$pwlocdir/__general";
+mv "$pwdlocdir/-" "$pwdlocdir/__general";
 cat header >"$pwdlocdir"/db.changelog.xml;
 ls -1d "$pwdlocdir"/*/ | sed 's/.*'"$locdir"'\/\(.*\)/    <include file="\1\/db.changelog.xml"\/>/' \
 	>>"$pwdlocdir"/db.changelog.xml
@@ -118,4 +125,9 @@ Done.
 Things worth to check:
 
 \t - database creation - script exists in $locdir/__general/DATABASE, but is not connected to db.changlog system
-\t - databasechangelog* presence - if source database were maintained by liquibase"
+\t - databasechangelog* presence - if source database were maintained by liquibase
+\t - initial values - there is no initial values in tables, they should be added separately
+
+\t - function names - remove parameters from filename
+\t - <create or replace> functionality is not used
+"
