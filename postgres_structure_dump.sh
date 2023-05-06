@@ -46,11 +46,12 @@ fi
 pwdlocdir="$(pwd)/$locdir"
 
 # prepare folders
+startdir=$(pwd);
 rm -rf "$pwdlocdir" 2>/dev/null ;
 rm -rf "$pwdlocdir"".tmp" 2>/dev/null ;
 mkdir "$pwdlocdir";
 mkdir "$pwdlocdir"".tmp";
-startdir=$(pwd);
+cd "$pwdlocdir"".tmp" || exit 1;
 
 # get structure from database
 if [[ "$sshconn" == "localhost" ]] ; then
@@ -84,6 +85,12 @@ if [[ "$dbceverywhere" == "no" ]] ; then
         -e '1i\--changeset '$author':'$n' runOnChange:true endDelimiter:"" stripComments:false' $f ;
   done;
 fi;
+
+find $pwdlocdir -name *.sql -exec sed -i -e 's/CREATE FUNCTION/create or replace function/' {} \;
+find $pwdlocdir -name *.sql -exec sed -i -e 's/CREATE INDEX/CREATE INDEX if not exists/' {} \;
+find $pwdlocdir -name *.sql -exec sed -i -e 's/CREATE SEQUENCE/CREATE SEQUENCE if not exists/' {} \;
+find $pwdlocdir -name *.sql -exec sed -i -e 's/CREATE TABLE/CREATE TABLE if not exists/' {} \;
+find $pwdlocdir -name *.sql -exec sed -i -e 's/CREATE VIEW/create or replace view/' {} \;
 
 # build db.changelog.xml files in folders
 echo -e '<?xml version="1.1" encoding="UTF-8" standalone="no"?>\n<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:ext="http://www.liquibase.org/xml/ns/dbchangelog-ext" xmlns:pro="http://www.liquibase.org/xml/ns/pro" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog-ext http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-ext.xsd http://www.liquibase.org/xml/ns/pro http://www.liquibase.org/xml/ns/pro/liquibase-pro-4.1.xsd http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">\n' \
@@ -141,7 +148,7 @@ elif [[ "$dbceverywhere" == "no" ]] ; then
 fi
 
 # main db.changelog
-mv "$pwdlocdir/-" "$pwdlocdir/__general";
+mv "$pwdlocdir/-" "$pwdlocdir/_general";
 cat header >"$pwdlocdir"/db.changelog.xml;
 ls -1d "$pwdlocdir"/*/ | sed 's/.*'"$locdir"'\/\(.*\)/    <include file="\1\/db.changelog.xml"\/>/' \
 	>>"$pwdlocdir"/db.changelog.xml
@@ -155,10 +162,10 @@ printf "
 Done.
 Things worth to check:
 
-\t - database creation - script exists in $locdir/__general/DATABASE, but is not connected to db.changlog system
+\t - database creation - script exists in $locdir/_general/DATABASE, but is not connected to db.changlog system
 \t - databasechangelog* presence - if source database were maintained by liquibase
 \t - initial values - there is no initial values in tables, they should be added separately
 
-\t - function names - remove parameters from filename
-\t - <create or replace> functionality is not used
+\t - <create or replace> functionality is not used, <create if exists> in place, add <drop if exists> where needed
 "
+
