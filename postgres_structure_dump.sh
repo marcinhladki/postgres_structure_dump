@@ -56,24 +56,24 @@ cd "$pwdlocdir"".tmp" || exit 1;
 # get structure from database
 if [[ "$sshconn" == "localhost" ]] ; then
   sudo -u postgres pg_dump -d "$database" -c --if-exists --schema-only --no-owner | \
-    sed  -e '/^--$/d' -e 's/^--/##/' > structure_dump.sql;
+    sed  -e '/^--$/d' -e 's/^-- Name:/_postgres_structure_dump_delimiter Name:/' > structure_dump.sql;
 else
   ssh -C "$sshconn" \
     sudo -u postgres pg_dump -d "$database" -C -c --if-exists --schema-only --no-owner | \
-    sed  -e '/^--$/d' -e 's/^--/##/' > structure_dump.sql;
+    sed  -e '/^--$/d' -e 's/^--/_postgres_structure_dump_delimiter/' > structure_dump.sql;
 fi
 # cut big result file to many small files each for one database object
-csplit -z -s -f std structure_dump.sql /##/ '{*}';
+csplit -z -s -f std structure_dump.sql /_postgres_structure_dump_delimiter/ '{*}';
 
 # build directory tree for schemas and object types
 for f in std*; 
 do 
-	n=$(sed -n '/##/s/##\s*Name: \(\w*\).*/\1/p' $f | sed 's/\W/_/g');
-	t=$(sed -n '/##/s/##\s*Name:[^\;]*; Type: \([^\;]*\);.*/\1/p' $f | sed 's/\W/_/g');
-	s=$(sed -n '/##/s/##\s*Name:[^\;]*; Type:[^\;]*; Schema: \(\S*\);.*/\1/p' $f);
+	n=$(sed -n '/_postgres_structure_dump_delimiter/s/_postgres_structure_dump_delimiter\s*Name: \(\w*\).*/\1/p' $f | sed 's/\W/_/g');
+	t=$(sed -n '/_postgres_structure_dump_delimiter/s/_postgres_structure_dump_delimiter\s*Name:[^\;]*; Type: \([^\;]*\);.*/\1/p' $f | sed 's/\W/_/g');
+	s=$(sed -n '/_postgres_structure_dump_delimiter/s/_postgres_structure_dump_delimiter\s*Name:[^\;]*; Type:[^\;]*; Schema: \(\S*\);.*/\1/p' $f);
 	mkdir "$pwdlocdir"/$s 2>/dev/null;
 	mkdir "$pwdlocdir"/$s/$t 2>/dev/null; 
-	sed '/^##/d' $f >> "$pwdlocdir"/$s/$t/$n.sql;
+	sed '/^_postgres_structure_dump_delimiter/d' $f >> "$pwdlocdir"/$s/$t/$n.sql;
 done;
 
 # add changeset description to *.sql files
@@ -153,6 +153,17 @@ cat header >"$pwdlocdir"/db.changelog.xml;
 ls -1d "$pwdlocdir"/*/ | sed 's/.*'"$locdir"'\/\(.*\)/    <include file="\1\/db.changelog.xml"\/>/' \
 	>>"$pwdlocdir"/db.changelog.xml
 cat footer >>"$pwdlocdir"/db.changelog.xml;
+
+# final touch
+cd "$pwdlocdir" || exit 1;
+find . -type f -name "*tmp*.sql" -exec rm {} \;
+ls -1 */FUNCTION/*.sql | xargs sed -i '/CREATE FUNCTION/ s/CREATE FUNCTION/create or replace function/'
+ls -1 */SEQUENCE/*.sql | xargs sed -i '/CREATE SEQUENCE/ s/CREATE SEQUENCE/CREATE SEQUENCE if not exists/ '
+ls -1 */TABLE/*.sql | xargs sed -i '/CREATE TABLE/ s/CREATE TABLE/& if not exists/ '
+ls -1 */VIEW/*.sql | xargs sed -i 's/CREATE VIEW/create or replace view/ '
+ls -1 */INDEX/*.sql | xargs sed -i 's/CREATE INDEX/CREATE INDEX if not exists/ '
+ls -1 */PROCEDURE/*.sql | xargs sed -i 's/CREATE PROCEDURE/create or replace procedure/ '
+
 
 #cleaning
 cd "$startdir" || exit 0;
