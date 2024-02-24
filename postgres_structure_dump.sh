@@ -10,6 +10,7 @@ function usage () {
 	fi
 	printf ' -c\tssh connection user@host\n'
 	printf ' -d\tdatabase\n'
+	printf ' -p\tport\n'
 	printf ' -l\tdirectory for results (default structure_dump)\n'
 	printf ' -a\tauthor used in liquibase script (default current username)\n'
 	printf ' -e\tdbchangelog everywhere flag\n'
@@ -18,11 +19,12 @@ function usage () {
 
 dbceverywhere="no"
 
-while getopts hc:d:l:a:e flag
+while getopts hc:d:p:l:a:e flag
 do
     case "${flag}" in
         c) sshconn=${OPTARG};;
         d) database=${OPTARG};;
+        p) pg_port=${OPTARG};;
         l) locdir=${OPTARG};;
         a) author=${OPTARG};;
         e) dbceverywhere="yes";;
@@ -35,6 +37,7 @@ done
 
 [[ -n $database ]] || { usage "database is required"; exit 1; }
 [[ -n $sshconn ]] || { usage "ssh connection is required"; exit 1; }
+[[ -n $pg_port ]] || { pg_port="5432"; }
 [[ -n $locdir ]] || { locdir="$database""_structure_dump"; }
 [[ -n $author ]] || { author="$(whoami)" ; }
 
@@ -55,7 +58,7 @@ cd "$pwdlocdir"".tmp" || exit 1;
 
 # get structure from database
 if [[ "$sshconn" == "localhost" ]] ; then
-  sudo -u postgres pg_dump -d "$database" -c --if-exists --schema-only --no-owner | \
+  sudo -u postgres pg_dump -h localhost -p "$pg_port" -d "$database" -c --if-exists --schema-only --no-owner | \
     sed  -e '/^--$/d' -e 's/^-- Name:/_postgres_structure_dump_delimiter Name:/' > structure_dump.sql;
 else
   ssh -C "$sshconn" \
