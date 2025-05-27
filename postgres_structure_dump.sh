@@ -8,9 +8,7 @@ function usage () {
 	else
 		printf '\n'
 	fi
-	printf ' -c\tssh connection user@host\n'
-	printf ' -d\tdatabase\n'
-	printf ' -p\tport\n'
+	printf ' -f\tfile with pg_dump result\n'
 	printf ' -l\tdirectory for results (default structure_dump)\n'
 	printf ' -a\tauthor used in liquibase script (default current username)\n'
 	printf ' -e\tdbchangelog everywhere flag\n'
@@ -19,12 +17,10 @@ function usage () {
 
 dbceverywhere="no"
 
-while getopts hc:d:p:l:a:e flag
+while getopts hf:l:a:e flag
 do
     case "${flag}" in
-        c) sshconn=${OPTARG};;
-        d) database=${OPTARG};;
-        p) pg_port=${OPTARG};;
+        f) pg_file=${OPTARG};;
         l) locdir=${OPTARG};;
         a) author=${OPTARG};;
         e) dbceverywhere="yes";;
@@ -35,17 +31,12 @@ do
     esac
 done
 
-[[ -n $database ]] || { usage "database is required"; exit 1; }
-[[ -n $sshconn ]] || { usage "ssh connection is required"; exit 1; }
-[[ -n $pg_port ]] || { pg_port="5432"; }
-[[ -n $locdir ]] || { locdir="$database""_structure_dump"; }
+if [[ ! -f "$pg_file" ]]; then
+  { usage "file from pg_dump is required"; exit 1; }
+fi
+[[ -n $locdir ]] || { locdir="_structure_dump"; }
 [[ -n $author ]] || { author="$(whoami)" ; }
 
-if [[ "$sshconn" == "localhost" ]] ; then
-  printf "dump Postgres database structure using:\n\tlocal database: $database\n\tlocal directory: $locdir\n\tauthor: $author\n"
-else
-  printf "dump Postgres database structure using:\n\tssh: $sshconn\n\tdatabase: $database\n\tlocal directory: $locdir\n\tauthor: $author\n"
-fi
 pwdlocdir="$(pwd)/$locdir"
 
 # prepare folders
@@ -56,15 +47,7 @@ mkdir "$pwdlocdir";
 mkdir "$pwdlocdir"".tmp";
 cd "$pwdlocdir"".tmp" || exit 1;
 
-# get structure from database
-if [[ "$sshconn" == "localhost" ]] ; then
-  sudo -u postgres pg_dump -h localhost -p "$pg_port" -d "$database" -c --if-exists --schema-only --no-owner | \
-    sed  -e '/^--$/d' -e 's/^-- Name:/_postgres_structure_dump_delimiter Name:/' > structure_dump.sql;
-else
-  ssh -C "$sshconn" \
-    sudo -u postgres pg_dump -d "$database" -C -c --if-exists --schema-only --no-owner | \
-    sed  -e '/^--$/d' -e 's/^--/_postgres_structure_dump_delimiter/' > structure_dump.sql;
-fi
+sed  -e '/^--$/d' -e 's/^--/_postgres_structure_dump_delimiter/' ../"$pg_file" > structure_dump.sql
 # cut big result file to many small files each for one database object
 csplit -z -s -f std structure_dump.sql /_postgres_structure_dump_delimiter/ '{*}';
 
@@ -75,7 +58,7 @@ do
 	t=$(sed -n '/_postgres_structure_dump_delimiter/s/_postgres_structure_dump_delimiter\s*Name:[^\;]*; Type: \([^\;]*\);.*/\1/p' $f | sed 's/\W/_/g');
 	s=$(sed -n '/_postgres_structure_dump_delimiter/s/_postgres_structure_dump_delimiter\s*Name:[^\;]*; Type:[^\;]*; Schema: \(\S*\);.*/\1/p' $f);
 	mkdir "$pwdlocdir"/$s 2>/dev/null;
-	mkdir "$pwdlocdir"/$s/$t 2>/dev/null; 
+	mkdir "$pwdlocdir"/$s/$t 2>/dev/null;
 	sed '/^_postgres_structure_dump_delimiter/d' $f >> "$pwdlocdir"/$s/$t/$n.sql;
 done;
 
@@ -89,11 +72,11 @@ if [[ "$dbceverywhere" == "no" ]] ; then
   done;
 fi;
 
-find $pwdlocdir -name *.sql -exec sed -i -e 's/CREATE FUNCTION/create or replace function/' {} \;
-find $pwdlocdir -name *.sql -exec sed -i -e 's/CREATE INDEX/CREATE INDEX if not exists/' {} \;
-find $pwdlocdir -name *.sql -exec sed -i -e 's/CREATE SEQUENCE/CREATE SEQUENCE if not exists/' {} \;
-find $pwdlocdir -name *.sql -exec sed -i -e 's/CREATE TABLE/CREATE TABLE if not exists/' {} \;
-find $pwdlocdir -name *.sql -exec sed -i -e 's/CREATE VIEW/create or replace view/' {} \;
+find "$pwdlocdir" -name '*.sql' -exec sed -i -e 's/CREATE FUNCTION/create or replace function/' {} \;
+find "$pwdlocdir" -name '*.sql' -exec sed -i -e 's/CREATE INDEX/CREATE INDEX if not exists/' {} \;
+find "$pwdlocdir" -name '*.sql' -exec sed -i -e 's/CREATE SEQUENCE/CREATE SEQUENCE if not exists/' {} \;
+find "$pwdlocdir" -name '*.sql' -exec sed -i -e 's/CREATE TABLE/CREATE TABLE if not exists/' {} \;
+find "$pwdlocdir" -name '*.sql' -exec sed -i -e 's/CREATE VIEW/create or replace view/' {} \;
 
 # build db.changelog.xml files in folders
 echo -e '<?xml version="1.1" encoding="UTF-8" standalone="no"?>\n<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog" xmlns:ext="http://www.liquibase.org/xml/ns/dbchangelog-ext" xmlns:pro="http://www.liquibase.org/xml/ns/pro" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog-ext http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-ext.xsd http://www.liquibase.org/xml/ns/pro http://www.liquibase.org/xml/ns/pro/liquibase-pro-4.1.xsd http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.1.xsd">\n' \
@@ -176,10 +159,8 @@ printf "
 Done.
 Things worth to check:
 
-\t - database creation - script exists in $locdir/_general/DATABASE, but is not connected to db.changlog system
+\t - database creation - script exists in %s/_general/DATABASE, but is not connected to db.changlog system
 \t - databasechangelog* presence - if source database were maintained by liquibase
 \t - initial values - there is no initial values in tables, they should be added separately
-
-\t - <create or replace> functionality is not used, <create if exists> in place, add <drop if exists> where needed
-"
+" "$locdir"
 
